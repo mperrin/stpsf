@@ -20,52 +20,6 @@ _log = logging.getLogger('webbpsf')
 
 #######  Classes for modeling aspects of JWST's segmented active primary #####
 
-
-def segment_zernike_basis(segnum=1, nterms=15, npix=512, outside=np.nan):
-    """Basis set in the style of poppy.zernike.zernike_basis for segment-level
-    Zernike polynomials for one segment at a time in JWST's aperture.
-
-    Parameters
-    ------------
-    segnum : integer
-        1 to 18, number of JWST segment. Uses same numbering convention as the WSS.
-    nterms : integer
-        Number of Zernike polynomial terms to return
-    npix : integer
-        Number of pixels per side of the array
-    outside : float
-        Value to fill the array with outside of the valid segment.
-
-    """
-    from .webbpsf_core import segname
-
-    aper = WebbPrimaryAperture(label_segments=True)
-    w = poppy.Wavefront(npix=npix, diam=constants.JWST_CIRCUMSCRIBED_DIAMETER)
-    segmask = aper.get_transmission(w)
-
-    segname = segname(segnum)
-    cenx, ceny = aper.seg_centers[segname]
-
-    # nominal point to point diam for A and B segments;
-    # ignoring slight departures from ideal hexes for now.
-    seg_radius = constants.JWST_SEGMENT_RADIUS
-
-    y, x = w.coordinates()
-
-    r = np.sqrt((y - ceny) ** 2 + (x - cenx) ** 2) / seg_radius
-    theta = np.arctan2((y - ceny) / seg_radius, (x - cenx) / seg_radius)
-    r[segmask != segnum] = np.nan
-    theta[segmask != segnum] = np.nan
-
-    wg = np.where(segmask == segnum)
-    outzerns = np.full((nterms, npix, npix), outside, dtype=float)
-    outzerns_tmp = poppy.zernike.zernike_basis(nterms=nterms, rho=r[wg], theta=theta[wg], outside=outside)
-    for iz in range(nterms):
-        outzerns[iz][wg] = outzerns_tmp[iz]
-
-    return outzerns
-
-
 class WebbPrimaryAperture(poppy.AnalyticOpticalElement):
     """The JWST telescope primary mirror geometry, in all its
     hexagonal obscured complexity. Note this has **just the aperture shape**
@@ -121,70 +75,6 @@ class WebbPrimaryAperture(poppy.AnalyticOpticalElement):
             res.shape = (npix, npix)
             out[res] = 0
         return out
-
-
-# Note - the following is **NOT USED YET **
-# This will be finished up and used in a subsequent release to
-# apply the OTE field dependence. For now just the fixed per SI stuff
-# is there.
-class WebbOTEPupil(poppy.FITSOpticalElement):
-    """The complex OTE pupil, including:
-    1) the aperture geometry, based on the cryo ICD detailed coordinates
-    2) high spatial frequency WFE from the as-built mirrors in Rev G optical model
-    3) mid frequencies from Rev W optical budget
-    4) low frequency field-dependent WFE from the Rev G optical model.
-
-    Parameters
-    -----------
-    level : '
-    """
-
-    def __init__(self, instrument=None, level='requirements', opd_index=0, **kwargs):
-        if instrument is not None:
-            self.instrument = instrument
-            self.instr_name = instrument.name
-            self.tel_coords = instrument._tel_coords()
-        else:
-            self.instrument = None
-            self.instr_name = 'NIRCam'
-            # TODO figure out default V2V3 coords here
-            self.tel_coords = (0, 0)  # ? TODO
-
-        # determine filename for pupil amplitude array
-        aperture_file = 'jwst_pupil_revW_npix1024.fits.gz'
-        aperture_file = os.path.abspath(os.path.join(utils.get_webbpsf_data_path(), aperture_file))
-
-        # determine filename for the OPD array
-        #   This should contain a precomputed combination of
-        #   Rev G high spatial frequencies and
-        #   Rev W mid spatial frequencies
-        # Depends on what the 'level' parameter is.
-
-        if level == 'perfect':
-            opd_file = os.path.join(utils.get_webbpsf_data_path(), 'OPD_jwst_ote_perfectly_aligned.fits')
-        elif level in ('predicted', 'requirements'):
-            opd_file = os.path.join(
-                utils.get_webbpsf_data_path(),
-                self.instr_name,
-                'OPD',
-                'OPD_RevW_ote_for_{}_{}.fits'.format(self.instr_name, level),
-            )
-        else:
-            raise ValueError('Invalid/unknown wavefront error level')
-
-        super(WebbOTEPupil, self).__init__(name='JWST Primary', transmission=aperture_file, opd=opd_file, **kwargs)
-
-        if self.instrument is not None:
-            # we need a field point to be able to use this so
-            # just skip it if we don't have one.
-
-            # determine Zernike coeffs for field dependent error
-            # based on Rev G field dependence model.
-
-            coeffs = np.zeros(22)
-            self.zernike_coeffs = coeffs
-
-            # TODO apply that to as a modification to the OPD array.
 
 
 #######  Custom Optics used in JWInstrument classes  #####
