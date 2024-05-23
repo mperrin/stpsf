@@ -286,7 +286,7 @@ def get_pupil_mask(npix=1024, label_segments=False):
        Return map with segment IDs 1 through 18, rather than just 1 or 0 for in pupil or not.
 
     """
-    basename = f'JWpupil_segments_RevW_npix{npix}.fits.gz' if label_segments else f'jwst_pupil_RevW_npix{npix}.fits.gz'
+    basename = f'JWpupil_segments_RevW_npix{npix}.fits.gz' if label_segments else f'jwst_pupil_flight_npix{npix}.fits.gz'
 
     fullname = os.path.join(get_webbpsf_data_path(), basename)
 
