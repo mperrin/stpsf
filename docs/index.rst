@@ -81,6 +81,7 @@ Contents
    :caption: Package Documentation
 
    api_reference.rst
+   webbpsf_to_stpsf.ipynb
    help.rst
    sampling.rst
    fft_optimization.rst
