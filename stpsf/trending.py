@@ -882,6 +882,31 @@ def single_measurement_trending_plot(
     cax.set_ylim(0, 0.15)
     fig.text(0.89, 0.30, 'Potential\nCorrections:', fontsize=13, fontweight='bold', horizontalalignment='left')
 
+def single_measurement_trending_plot_for_date(date, **kwargs):
+    """Wavefront trending plot for a single measurement specified by date
+
+	This is a convenience wrapper around single_measurement_trending_plot() to allow
+    specifying which measurement to show by date, rather than by a row index within
+    the table of all wavefront sensing measurements.
+
+    Parameters
+    ----------
+    date : str or astropy.time.Time
+        Date and time to show the wavefront sensing around, either as a string like
+        '2022-07-12' or '2023-12-25T12:20' or an astropy Time object. The trending plot
+        will be shown for the first WFS measurement *after* this time, compared to the
+        last WFS before this time; i.e. will be shown for the time period surrounding
+        this measurement.
+
+	"""
+    opdtable = stpsf.mast_wss.retrieve_mast_opd_table()
+    opdtable = stpsf.mast_wss.deduplicate_opd_table(opdtable)
+
+    date_mjd = astropy.time.Time(date).mjd
+    row_index =np.where(opdtable['date_obs_mjd'] > date_mjd)[0][0]
+
+    return stpsf.trending.single_measurement_trending_plot(opdtable, row_index=row_index, **kwargs)
+
 
 def series_of_measurement_trending_plots(opdtable, ignore_missing=False, start_date=None):
     """Generate the wavefront trending plot for all NRCA3 FP1 OPDs since the completion of OTE alignment
