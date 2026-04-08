@@ -658,6 +658,8 @@ def single_measurement_trending_plot(
             fp1_target_1024 = astropy.io.fits.getdata(targ_file_fp1)
             fp1_target_256 = poppy.utils.krebin(fp1_target_1024,
                                                  (256, 256)) / 16  # scale factor for rebinning w/out increasing values
+        else:
+            fp1_target_256 = target_256
 
         if prev_was_targ_file != was_targ_file:
             prev_target_256 = fp1_target_256
@@ -882,7 +884,7 @@ def single_measurement_trending_plot(
     cax.set_ylim(0, 0.15)
     fig.text(0.89, 0.30, 'Potential\nCorrections:', fontsize=13, fontweight='bold', horizontalalignment='left')
 
-def single_measurement_trending_plot_for_date(date, **kwargs):
+def single_measurement_trending_plot_around_date(date, **kwargs):
     """Wavefront trending plot for a single measurement specified by date
 
 	This is a convenience wrapper around single_measurement_trending_plot() to allow
