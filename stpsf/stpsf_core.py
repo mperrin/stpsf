@@ -831,7 +831,7 @@ class JWInstrument(SpaceTelescopeInstrument):
         self.opd_list.sort()
         self.pupilopd = 'JWST_OTE_OPD_cycle1_example_2022-07-30.fits'  # Default is now an on-orbit measured example OPD
 
-        self.pupil = os.path.abspath(os.path.join(self._STPSF_basepath, 'jwst_pupil_RevW_npix1024.fits.gz'))
+        self.pupil = os.path.abspath(os.path.join(self._STPSF_basepath, 'jwst_pupil_flight_npix1024.fits.gz'))
         'Filename *or* fits.HDUList for JWST pupil mask. Usually there is no need to change this.'
 
         self.pupil_radius = constants.JWST_CIRCUMSCRIBED_DIAMETER / 2 * units.meter

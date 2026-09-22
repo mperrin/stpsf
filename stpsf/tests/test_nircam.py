@@ -137,7 +137,7 @@ def do_test_nircam_blc(clobber=False, kind='circular', angle=0, save=False, disp
         nc.image_mask = 'MASK210R'
         nc.pupil_mask = 'CIRCLYOT'
         fn = 'm210r'
-        expected_total_fluxes = [1.84e-5, 0.0240, 0.1376]  # Based on a prior calculation with STPSF
+        expected_total_fluxes = [1.84e-5, 0.0240, 0.1377]  # Based on a prior calculation with STPSF
         # values updated slightly for Rev W aperture results
         # Updated 2019-05-02 for coron WFE - changes from [1.35e-5, 0.0240, 0.1376] to [1.84e-5, 0.0240, 0.1376]
     else:
@@ -148,10 +148,10 @@ def do_test_nircam_blc(clobber=False, kind='circular', angle=0, save=False, disp
         # which are now the default.
         fn = 'mswb'
         if angle == 0:
-            expected_total_fluxes = [3.71e-6, 0.0628, 0.1449]  # Based on a prior calculation with STPSF
+            expected_total_fluxes = [3.71e-6, 0.0629, 0.1451]  # Based on a prior calculation with STPSF
             # Updated 2019-05-02 for coron WFE - changes from [2.09e-6, .0415, 0.1442] to [3.71e-6, .0628, 0.1449]
         elif angle == 45 or angle == -45:
-            expected_total_fluxes = [3.71e-6, 0.0221, 0.1192]  # Based on a prior calculation
+            expected_total_fluxes = [3.71e-6, 0.0221, 0.1193]  # Based on a prior calculation
             # Updated 2016-09-29 for Rev W results - slight change from 0.1171 to 0.1176
             # Updated 2018-02-20 for recoded MASKSWB - changes from 0.0219 to 0.0220; 0.1176 to 0.1192 ??
             # Updated 2019-05-02 for coron WFE - changes from [2.09e-6, 0.0220, 0.1192] to [3.71e-6, 0.0221, 0.1192]

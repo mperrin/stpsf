@@ -594,10 +594,10 @@ def test_changing_npix():
     nircam_1024.pupilopd = None  # Set to none so I don't have to worry about making new OPDs
     psf_1024 = nircam_1024.calc_psf(oversample=2, nlambda=1, add_distortion=False)
 
-    # Create a NIRCam instance using npix=2048
-    npix = 2048
+    # Create a NIRCam instance using npix=2048. Actually now use 4096 for the flight map.
+    npix = 4096
     nircam_2048 = stpsf.NIRCam()
-    nircam_2048.pupil = os.path.join(stpsf.utils.get_stpsf_data_path(), f'jwst_pupil_RevW_npix{npix}.fits.gz')
+    nircam_2048.pupil = nircam_2048.pupil.replace("npix1024", f"npix{npix}")
     nircam_2048.pupilopd = None  # Set to none so I don't have to worry about making new OPDs
     psf_2048 = nircam_2048.calc_psf(oversample=2, nlambda=1, add_distortion=False)
 
