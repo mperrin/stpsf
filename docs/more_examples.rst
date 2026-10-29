@@ -172,6 +172,29 @@ NIRSpec MSA
    :align: center
    :alt: Sample PSF image
 
+NIRSpec modes and MSA shutter selection
+---------------------------------------
+
+NIRSpec has ``'imaging'`` (i.e. target acquisition), ``'IFU'``, ``'MSA'`` and ``'FS'`` (fixed slit) modes. The mode is toggled automatically when
+you set ``image_mask``, as happened transparently in the fixed slit and MSA examples above. You can also set the mode
+manually when desired. In MSA mode, the field position is set by the shutter quadrant, row and column (as in the
+``SHUTTER_QUADRANT``, ``SHUTTER_ROW`` and ``SHUTTER_COLUMN`` of JWST MSA metafiles), instead of by detector coordinates:
+In IFU and FS modes, the field position is set to the location of the relevant IFU or slit aperture.
+
+.. code-block:: python
+
+    ns = stpsf.NIRSpec()
+    ns.mode = 'MSA'                # or ns.image_mask = 'Single MSA open shutter'
+    ns.msa_quadrant = 1            # these are None unless mode is 'MSA'
+    ns.msa_row = 100
+    ns.msa_column = 50
+    ns.disperser = 'G235H'         # reported, with the filter, in ns.band
+    ns.filter = 'F170LP'
+    psf = ns.calc_psf(monochromatic=2e-6)
+
+    ns.mode = 'FS'                 # fixed slit; select the slit with ns.image_mask
+    ns.image_mask = 'S200A1'
+
 
 
 

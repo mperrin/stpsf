@@ -367,6 +367,18 @@ few patterns with the MSA: (1) a single open shutter, (2) three adjacent
 open shutters to make a mini-slit, and (3) all shutters open at once.
 Other MSA patterns could be added if requested by users.
 
+NIRSpec has four modes, selected with the ``mode`` attribute: ``'imaging'`` (i.e. target acquisition), ``'IFU'``, ``'MSA'`` and ``'FS'`` (fixed slit).
+The mode is set automatically when you select an ``image_mask`` (e.g. a fixed slit name selects ``'FS'``, and an MSA mask selects ``'MSA'``).
+One of the main purposes of these modes is to help model NIRSpec's more complex mapping between detector pixels and field of view positions.
+The field position is used to interpolate the field-dependent OTE and SI WFE models.
+In IFU and FS modes the field position is set to the center position of the relevant aperture.
+In MSA mode the field position is set by specifying a particular MSA shutter via ``msa_quadrant``, ``msa_row`` and ``msa_column`` attributes (as in the
+``SHUTTER_QUADRANT``, ``SHUTTER_ROW`` and ``SHUTTER_COLUMN`` metadata of JWST MSA files).
+The shutter V2,V3 position is approximate (to ~0.3 arcsec).
+In imaging (TA) mode, the field of view is inferred directly from the specified detector pixel coordinates and detector (NRS1/NRS2), in the usual way identical to how
+this works for all the imaging instruments on JWST. For the spectroscopic modes, the selected detector and deteector position values aren't used in the field of view
+calculation (and aren't really used for much at all)
+
 By default the ``pupil_mask`` is set to the "NIRSpec grating" pupil mask.  In
 this case a rectangular pupil mask 8.41x7.91 m as projected onto the primary is
 added to the optical system at the pupil plane after the MSA. This is an
