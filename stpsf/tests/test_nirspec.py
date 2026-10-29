@@ -82,6 +82,57 @@ def test_mode_switch():
     assert nrs._rotation == nrs_default_v3pa
 
 
+def test_msa_fs_modes():
+    """Test MSA and FS mode switching, the msa_* properties, and band reporting"""
+    import pytest
+
+    nrs = stpsf_core.NIRSpec()
+    assert nrs.mode == 'imaging'
+    assert nrs.band is None
+    assert nrs.msa_quadrant is nrs.msa_row is nrs.msa_column is None
+
+    nrs.mode = 'MSA'
+    assert nrs.band == 'PRISM/CLEAR'
+    assert (nrs.msa_quadrant, nrs.msa_row, nrs.msa_column) == (3, 183, 86)
+    with pytest.raises(ValueError):
+        nrs.msa_row = 366
+    with pytest.raises(ValueError):
+        nrs.msa_quadrant = 5
+
+    # Quadrant corner shutters should land near the corners of the corresponding SIAF aperture
+    siaf = pysiaf.Siaf('NIRSpec')
+    for quad in (1, 2, 3, 4):
+        nrs.msa_quadrant, nrs.msa_row, nrs.msa_column = quad, 1, 1
+        ap = siaf[f'NRS_FULL_MSA{quad}']
+        corner = np.array([ap.corners('tel')[0][0], ap.corners('tel')[1][0]])
+        assert np.hypot(*(nrs._tel_coords().to_value(u.arcsec) - corner)) < 1  # within ~1 arcsec
+        nrs.msa_row, nrs.msa_column = 183, 86
+        assert np.hypot(*(nrs._tel_coords().to_value(u.arcsec) - [ap.V2Ref, ap.V3Ref])) < 2
+
+    nrs.mode = 'imaging'
+    assert nrs.msa_quadrant is None
+    with pytest.raises(RuntimeError):
+        nrs.msa_row = 10
+
+    nrs.mode = 'FS'
+    assert nrs.band is not None
+    assert nrs.image_mask == 'S1600A1'
+    assert nrs.msa_row is None
+
+
+def test_image_mask_toggles_mode():
+    nrs = stpsf_core.NIRSpec()
+    assert nrs.mode == 'imaging'
+    nrs.image_mask = 'S200A1'
+    assert nrs.mode == 'FS'
+    ap = pysiaf.Siaf('NIRSpec')['NRS_S200A1_SLIT']
+    assert np.isclose(nrs._tel_coords()[0].to_value(u.arcsec), ap.V2Ref)
+    nrs.image_mask = 'Single MSA open shutter'
+    assert nrs.mode == 'MSA'
+    nrs.image_mask = 'IFU'
+    assert nrs.mode == 'IFU'
+
+
 def test_IFU_wavelengths():
     """Test computing the wqvelength sampling for a sim IFU cube"""
     nrs = stpsf_core.NIRSpec()

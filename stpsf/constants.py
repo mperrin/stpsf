@@ -413,6 +413,11 @@ INSTRUMENT_IFU_BROADENING_PARAMETERS = {
     'MIRI': {'sigma': 0.05},
 }
 
+# NIRSpec microshutter array (MSA) geometry: number of shutter rows and columns in each of the 4 quadrants.
+# Shutter row/column indices are 1-based, consistent with SHUTTER_ROW and SHUTTER_COLUMN in JWST MSA metafiles.
+NIRSPEC_MSA_N_ROWS = 365
+NIRSPEC_MSA_N_COLUMNS = 171
+
 # Information about the effects on WFE of the IEC thermal variations
 #
 # Table of value for IEC telemetry to WFE model. Coefficients from model fit by Randal Telfer

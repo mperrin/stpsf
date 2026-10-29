@@ -1132,7 +1132,11 @@ class JWInstrument(SpaceTelescopeInstrument):
 
             self.aperturename = aperture_name
 
-            if (self.name == 'NIRSpec' or self.name == 'MIRI') and ap.AperType == 'SLIT':
+            if self.name == 'NIRSpec' and 'MSA' in aperture_name:
+                # MSA positions are set via shutter quadrant/row/column, not detector pixels, and the MSA center
+                # may not even fall on the current detector. So leave the detector position unchanged.
+                pass
+            elif (self.name == 'NIRSpec' or self.name == 'MIRI') and ap.AperType == 'SLIT':
                 # NIRSpec slit apertures need some separate handling, since they don't map directly to detector pixels
                 # In this case the detector position is not uniquely defined, but we ensure to get reasonable values by
                 # using one of the full-detector NIRspec apertures
@@ -1141,7 +1145,11 @@ class JWInstrument(SpaceTelescopeInstrument):
                 ref_in_tel = ap.V2Ref, ap.V3Ref
                 nrs_full_aperture = self.siaf[self.detector + '_FULL']
                 ref_in_sci = nrs_full_aperture.tel_to_sci(*ref_in_tel)
-                self.detector_position = ref_in_sci
+                try:
+                    self.detector_position = ref_in_sci
+                except ValueError:
+                    # e.g. a NIRSpec slit that falls on the other detector; position isn't needed for V2V3 here
+                    _log.debug(f'SLIT aperture reference {ref_in_sci} is off the current detector; position unchanged')
             elif self.name == 'MIRI' and ap.AperType == 'COMPOUND':
                 # MIRI IFU compound apertures need separate handling, since they don't map directoy to detector pixels
                 # In this case the detector position is not uniquely defined, and there do not exist
@@ -1307,12 +1315,16 @@ class JWInstrument(SpaceTelescopeInstrument):
                 # Apply distortion effects to NIRSpec psf: Distortion only
                 # (because applying detector effects would only make sense after simulating spectral dispersion)
                 _log.debug('NIRSpec: Adding optical distortion')
-                if self.mode != 'IFU':
+                if self.mode == 'imaging':
                     psf_siaf = distortion.apply_distortion(result)  # apply siaf distortion model
                     psf_distorted = detectors.apply_detector_charge_diffusion(
                         psf_siaf, options
                     )  # apply detector charge transfer model
 
+                elif self.mode in ('MSA', 'FS'):
+                    # slit-type SIAF apertures have no distortion polynomials, so skip distortion,
+                    # but the spectra are still measured by the detectors so apply charge diffusion
+                    psf_distorted = detectors.apply_detector_charge_diffusion(result, options)
                 else:
                     # there is not yet any distortion calibration for the IFU.
                     psf_distorted = detectors.apply_nirspec_ifu_broadening(result, options)
@@ -2051,7 +2063,7 @@ class JWInstrument_with_IFU(JWInstrument, ABC):
 
     @property
     def mode(self):
-        """Currently selected instrument major mode, imaging or IFU"""
+        """Currently selected instrument major mode, e.g. imaging or IFU (NIRSpec also has MSA and FS)"""
         return self._mode
 
     @mode.setter
@@ -3186,6 +3198,15 @@ class NIRSpec(JWInstrument_with_IFU):
     is added to the optical system. This is an estimate of the pupil stop imposed by the outer edge of the grating
     clear aperture, estimated based on optical modeling by Erin Elliot and Marshall Perrin.
 
+    Notes on MSA and FS support:
+        Setting .mode to 'MSA' (or setting .image_mask to any MSA mask) enables MSA mode, in which the field position
+        is set using the .msa_quadrant, .msa_row, and .msa_column attributes (as in SHUTTER_QUADRANT, SHUTTER_ROW and
+        SHUTTER_COLUMN in JWST MSA metafiles) rather than detector pixel coordinates. These attributes are None
+        in other modes. The shutter V2,V3 position is approximated by interpolating between the corners of the
+        SIAF NRS_FULL_MSA<quadrant> aperture (accurate to ~0.3 arcsec).
+        Setting .mode to 'FS' (or setting .image_mask to a fixed slit name) enables Fixed Slit mode, in which the
+        field position is set to the V2,V3 reference position of the corresponding SIAF NRS_<slit>_SLIT aperture.
+
     Notes on IFU support:
         Additional features for modeling NRS IFU PSFs are enabled by setting the .mode attribute to 'IFU'.
 
@@ -3200,6 +3221,11 @@ class NIRSpec(JWInstrument_with_IFU):
 
     """
 
+    # MSA shutter selection, only meaningful in MSA mode; see the msa_quadrant, msa_row, msa_column properties
+    _msa_quadrant = None
+    _msa_row = None
+    _msa_column = None
+
     def __init__(self):
         JWInstrument_with_IFU.__init__(self, 'NIRSpec')
         self.pixelscale = 0.10435  # Average over both detectors.  SIAF PRDOPSSOC-059, 2022 Dec
@@ -3210,7 +3236,9 @@ class NIRSpec(JWInstrument_with_IFU):
         # Modes and default SIAF apertures for each
         self._modes_list = {
             'imaging': 'NRS1_FULL',
-            'IFU': 'NRS_FULL_IFU'
+            'IFU': 'NRS_FULL_IFU',
+            'MSA': 'NRS_FULL_MSA',
+            'FS': 'NRS_S1600A1_SLIT',
         }
 
         self._IFU_pixelscale = 0.1043  # same.
@@ -3233,7 +3261,7 @@ class NIRSpec(JWInstrument_with_IFU):
             'IFU',
         ]
         self.pupil_mask_list = ['NIRSpec grating']
-        self.image_mask = 'MSA all open'
+        self._image_mask = 'MSA all open'  # set directly, to avoid the mode switch triggered by the image_mask setter
         self.pupil_mask = self.pupil_mask_list[-1]
 
         self.disperser_list = ['PRISM', 'G140M', 'G140H', 'G235M', 'G235H', 'G395M', 'G395H']
@@ -3379,9 +3407,18 @@ class NIRSpec(JWInstrument_with_IFU):
 
                 if 'IFU' in self.aperturename:
                     self._mode = 'IFU'
-                    if self._disperser is None:
-                        self.disperser = 'PRISM'  # Set some default spectral mode
-                        self.filter = 'CLEAR'
+                elif 'MSA' in self.aperturename:
+                    self._mode = 'MSA'
+                elif self.aperturename.endswith('_SLIT'):
+                    self._mode = 'FS'
+                else:
+                    self._mode = 'imaging'
+
+                if self._mode != 'imaging' and self._disperser is None:
+                    self.disperser = 'PRISM'  # Set some default spectral mode
+                    self.filter = 'CLEAR'
+
+                if self._mode == 'IFU':
                     if self.image_mask not in ['IFU', None]:
                         info_message = (
                             'The currently-selected image mask (slit) is not compatible with IFU mode. '
@@ -3389,11 +3426,32 @@ class NIRSpec(JWInstrument_with_IFU):
                         )
                         _log.info(info_message)
                         self.image_mask = None
-                else:
-                    self._mode = 'imaging'  # More to implement here later!
+                elif self._mode == 'MSA':
+                    if self._msa_quadrant is None:
+                        # default to a central shutter in quadrant 3, near the default field point
+                        self._msa_quadrant = 3
+                        self._msa_row = constants.NIRSPEC_MSA_N_ROWS // 2 + 1
+                        self._msa_column = constants.NIRSPEC_MSA_N_COLUMNS // 2 + 1
+                    if 'MSA' not in str(self.image_mask):
+                        self._image_mask = 'MSA all open'
+                elif self._mode == 'FS':
+                    self._image_mask = self.aperturename.split('_')[1]  # e.g. NRS_S200A1_SLIT -> S200A1
         # Update the rotation angle
         # This works the same for both regular and IFU modes
         self._rotation = self._get_aperture_rotation(self.aperturename)
+
+    def _msa_shutter_to_v2v3(self, quadrant, row, column):
+        """Approximate V2,V3 position (arcmin Quantity) of the center of an MSA shutter.
+
+        Uses bilinear interpolation between the V2,V3 vertices of the NRS_FULL_MSA<quadrant> SIAF aperture,
+        whose corners are the (row, column) = (1, 1), (1, 171), (365, 171), (365, 1) shutters, in that order.
+        Differences relative to the full pipeline MSA->OTE transforms are <~0.3 arcsec.
+        """
+        v2_corners, v3_corners = self.siaf[f'NRS_FULL_MSA{quadrant}'].corners('tel')
+        u = (row - 0.5) / constants.NIRSPEC_MSA_N_ROWS
+        w = (column - 0.5) / constants.NIRSPEC_MSA_N_COLUMNS
+        weights = np.array([(1 - u) * (1 - w), (1 - u) * w, u * w, u * (1 - w)])
+        return np.array([weights @ v2_corners, weights @ v3_corners]) / 60 * units.arcmin
 
     def _tel_coords(self):
         """Convert from science frame coordinates to telescope frame coordinates using
@@ -3402,10 +3460,13 @@ class NIRSpec(JWInstrument_with_IFU):
         Note that the astropy.units framework is used to return the result as a
         dimensional Quantity.
 
-        Some extra steps for NIRSpec to handle the more complicated/flexible mapping between detector and sky coordinates
+        Some extra steps for NIRSpec to handle the more complicated/flexible mapping between detector and sky coordinates.
+        In MSA mode, the position is that of the selected shutter. In FS and IFU modes, it is the SIAF reference
+        location of the selected slit or IFU aperture.
         """
-
-        if self.aperturename.startswith('NRS_'):
+        if self.mode == 'MSA':
+            return self._msa_shutter_to_v2v3(self._msa_quadrant, self._msa_row, self._msa_column)
+        elif self.aperturename.startswith('NRS_'):
             # These apertures don't map directly to particular detector position in the usual way
             # Return coords for center of the aperture reference location
             return (
@@ -3437,12 +3498,67 @@ class NIRSpec(JWInstrument_with_IFU):
         return self.siaf[apername].V3IdlYAngle
 
     @property
+    def image_mask(self):
+        """Currently selected image plane mask (slit). Selecting a fixed slit, an MSA mask, or the IFU
+        also switches the instrument mode to 'FS', 'MSA', or 'IFU' respectively."""
+        return self._image_mask
+
+    @image_mask.setter
+    def image_mask(self, name):
+        super(NIRSpec, type(self)).image_mask.fset(self, name)
+        mask = self._image_mask
+        if mask in ('S200A1', 'S200A2', 'S400A1', 'S1600A1', 'S200B1'):
+            self.set_position_from_aperture_name(f'NRS_{mask}_SLIT')
+        elif mask is not None and 'MSA' in mask and self.mode != 'MSA':
+            self.mode = 'MSA'
+        elif mask == 'IFU' and self.mode != 'IFU':
+            self.mode = 'IFU'
+
+    def _check_msa_attribute(self, name, value, max_value):
+        if self.mode != 'MSA':
+            if value is not None:
+                raise RuntimeError(f"The '{name}' property is only valid in MSA mode. Set mode='MSA' first.")
+            return None
+        if not (isinstance(value, (int, np.integer)) and 1 <= value <= max_value):
+            raise ValueError(f'{name} must be an integer from 1 to {max_value}, got {value}')
+        return int(value)
+
+    @property
+    def msa_quadrant(self):
+        """MSA shutter quadrant (1-4), as in SHUTTER_QUADRANT in MSA metafiles. None unless mode is 'MSA'."""
+        return self._msa_quadrant if self.mode == 'MSA' else None
+
+    @msa_quadrant.setter
+    def msa_quadrant(self, value):
+        self._msa_quadrant = self._check_msa_attribute('msa_quadrant', value, 4) or self._msa_quadrant
+
+    @property
+    def msa_row(self):
+        """MSA shutter row (1-365), as in SHUTTER_ROW in MSA metafiles. None unless mode is 'MSA'."""
+        return self._msa_row if self.mode == 'MSA' else None
+
+    @msa_row.setter
+    def msa_row(self, value):
+        self._msa_row = self._check_msa_attribute('msa_row', value, constants.NIRSPEC_MSA_N_ROWS) or self._msa_row
+
+    @property
+    def msa_column(self):
+        """MSA shutter column (1-171), as in SHUTTER_COLUMN in MSA metafiles. None unless mode is 'MSA'."""
+        return self._msa_column if self.mode == 'MSA' else None
+
+    @msa_column.setter
+    def msa_column(self, value):
+        self._msa_column = (
+            self._check_msa_attribute('msa_column', value, constants.NIRSPEC_MSA_N_COLUMNS) or self._msa_column
+        )
+
+    @property
     def disperser(self):
         """NIRSpec spectral dispersing element (grating or prism).
-        Only applies for IFU mode sims, currently; used to help set the
+        Only applies for spectroscopic modes (IFU, MSA, FS); used to help set the
         wavelength range to simulate
         """
-        if self.mode == 'IFU':
+        if self.mode != 'imaging':
             return self._disperser
         else:
             return None
@@ -3457,15 +3573,20 @@ class NIRSpec(JWInstrument_with_IFU):
     def _calc_psf_format_output(self, result, options):
         """Format output HDUList. In particular, add some extra metadata if in IFU mode"""
         super()._calc_psf_format_output(result, options)
-        if self.mode == 'IFU':
-            n_exts = len(result)
-            for ext in np.arange(n_exts):
-                result[ext].header['MODE'] = ('IFU', 'This is a NIRSpec IFU mode simulation')
-                result[ext].header['GRATING'] = (self.disperser, 'Name of the grating (or prism) element simulated.')
+        if self.mode != 'imaging':
+            for ext in np.arange(len(result)):
+                header = result[ext].header
+                header['MODE'] = (self.mode, f'This is a NIRSpec {self.mode} mode simulation')
+                header['GRATING'] = (self.disperser, 'Name of the grating (or prism) element simulated.')
+                header['FILTER'] = (self.filter, 'Name of the filter element simulated.')
+                if self.mode == 'MSA':
+                    header['MSA_QUAD'] = (self.msa_quadrant, 'MSA shutter quadrant')
+                    header['MSA_ROW'] = (self.msa_row, 'MSA shutter row')
+                    header['MSA_COL'] = (self.msa_column, 'MSA shutter column')
 
     @property
     def band(self):
-        if self.mode != 'IFU':
+        if self.mode == 'imaging':
             return None
 
         return self.disperser + '/' + self.filter
